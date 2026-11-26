@@ -186,3 +186,89 @@ function [absMax,relMax,normRel] = gradcheck(net,d,seed)
     relMax = max(abs(g-num)./max(1e-7,abs(g)+abs(num)));
     normRel = norm(g-num)/max(eps,norm(g)+norm(num));
 end
+
+function h = start_history(theta,net,Xtr,ytr,Xva,yva,o)
+    h.train = nan(o.budget+1,1); h.val = h.train; h.seconds = h.train;
+    h.train(1) = loss_grad(theta,net,Xtr,ytr);
+    h.val(1) = loss_grad(theta,net,Xva,yva); h.seconds(1) = 0;
+    h.bestVal = h.val(1); h.bestCost = 0; h.cost = 0; h.fullGrads = 0;
+    h.batchGrads = 0; h.accepted = 0; h.failed = false; h.stop = 'budget';
+end
+
+function [best,h] = train_gd(theta,layers,Xtr,ytr,Xva,yva,o)
+    [best,h] = train_mini(theta,layers,Xtr,ytr,Xva,yva,o,false);
+end
+
+function [best,h] = train_adam(theta,layers,Xtr,ytr,Xva,yva,o)
+    [best,h] = train_mini(theta,layers,Xtr,ytr,Xva,yva,o,true);
+end
+
+function [best,h] = train_mini(theta,layers,Xtr,ytr,Xva,yva,o,adam)
+    net = as_net(layers);
+    if ~isfield(o,'orderSeed'), o.orderSeed = o.seed; end
+    h = start_history(theta,net,Xtr,ytr,Xva,yva,o); best = theta; clock = tic;
+    set_seed(o.orderSeed); n = size(Xtr,2);
+    m = zeros(size(theta)); v = m;
+    for ep = 1:o.budget
+        order = randperm(n);
+        for first = 1:o.batch:n
+            ix = order(first:min(n,first+o.batch-1));
+            [~,g] = loss_grad(theta,net,Xtr(:,ix),ytr(ix));
+            h.batchGrads = h.batchGrads+1;
+            if adam
+                m = o.beta1*m+(1-o.beta1)*g; v = o.beta2*v+(1-o.beta2)*(g.^2);
+                mh = m/(1-o.beta1^h.batchGrads); vh = v/(1-o.beta2^h.batchGrads);
+                theta = theta-o.rate*mh./(sqrt(vh)+o.epsilon);
+            else
+                theta = theta-o.rate*g;
+            end
+        end
+        h.cost = ep; h.train(ep+1) = loss_grad(theta,net,Xtr,ytr);
+        h.val(ep+1) = loss_grad(theta,net,Xva,yva);
+        if ~isfinite(h.train(ep+1)) || ~isfinite(h.val(ep+1))
+            h.failed = true; h.stop = 'nonfinite'; h.seconds(ep+1) = toc(clock); break;
+        end
+        if h.val(ep+1)<h.bestVal, h.bestVal = h.val(ep+1); h.bestCost = ep; best = theta; end
+        h.accepted = ep; h.seconds(ep+1) = toc(clock);
+    end
+    h.elapsed = toc(clock);
+    h.fullGrads = h.batchGrads*o.batch/n;   % equivalente em gradientes de dataset completo
+end
+
+function [best,h] = train_bfgs(theta,layers,Xtr,ytr,Xva,yva,o)
+    net = as_net(layers);
+    h = start_history(theta,net,Xtr,ytr,Xva,yva,o); best = theta; clock = tic;
+    P = net.count; H = eye(P); first = true; [f,g] = loss_grad(theta,net,Xtr,ytr);
+    h.cost = 1; h.fullGrads = 1; h.train(2) = f; h.val(2) = h.val(1); h.seconds(2) = toc(clock);
+    while h.cost<o.budget
+        if norm(g,inf)<=o.tol, h.stop = 'tolerance'; break; end
+        direction = -(H*g); slope = g'*direction;
+        if ~isfinite(slope) || slope>=0, H = eye(P); first = true; direction = -g; slope = -(g'*g); end
+        if first, alpha = min(1,1/norm(g)); else, alpha = 1; end
+        accepted = false;
+        for trial = 1:o.maxTrials
+            candidate = theta+alpha*direction;
+            [fc,gc] = loss_grad(candidate,net,Xtr,ytr);
+            h.cost = h.cost+1; h.fullGrads = h.fullGrads+1; i = h.cost+1;
+            h.train(i) = h.train(i-1); h.val(i) = h.val(i-1);
+            if isfinite(fc) && all(isfinite(gc)) && fc<=f+o.armijo*alpha*slope
+                s = candidate-theta; y = gc-g; ys = y'*s;
+                if ys>1e-10*norm(y)*norm(s)
+                    if first, H = (ys/(y'*y))*eye(P); first = false; end  % escala inicial de H
+                    Hy = H*y;
+                    v = ((1+(y'*Hy)/ys)/(2*ys))*s-Hy/ys;
+                    H = H + s*v' + v*s';
+                end
+                theta = candidate; g = gc; f = fc; h.train(i) = f;
+                h.val(i) = loss_grad(theta,net,Xva,yva); h.accepted = h.accepted+1;
+                if h.val(i)<h.bestVal, h.bestVal = h.val(i); h.bestCost = h.cost; best = theta; end
+                accepted = true;
+            end
+            h.seconds(i) = toc(clock);
+            if accepted || h.cost>=o.budget, break; end
+            alpha = alpha*o.shrink;
+        end
+        if ~accepted && h.cost<o.budget, h.stop = 'line_search'; h.failed = true; break; end
+    end
+    h.elapsed = toc(clock);
+end
