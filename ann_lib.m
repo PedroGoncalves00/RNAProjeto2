@@ -272,3 +272,46 @@ function [best,h] = train_bfgs(theta,layers,Xtr,ytr,Xva,yva,o)
     end
     h.elapsed = toc(clock);
 end
+
+function fit = algorithms()
+    fit = {@train_gd,@train_bfgs,@train_adam};
+end
+
+function t = tune(d,net,o)
+    fit = algorithms(); t.rates = [o.rates.gd(:),o.rates.adam(:)];
+    t.scores = nan(size(t.rates,1),numel(o.tuneSeeds),2); t.selected = nan(1,3);
+    for j = 1:2
+        alg = 2*j-1;
+        for r = 1:numel(o.tuneSeeds)
+            seed = o.tuneSeeds(r); theta0 = init_params(net,seed); o.orderSeed = o.seed+1000*seed;
+            for v = 1:size(t.rates,1)
+                o.rate = t.rates(v,j);
+                [~,h] = fit{alg}(theta0,net,d.Xtr,d.Ytr,d.Xva,d.Yva,o);
+                if h.failed, t.scores(v,r,j) = Inf; else, t.scores(v,r,j) = h.bestVal; end
+            end
+        end
+        [~,k] = min(mean(t.scores(:,:,j),2)); t.selected(alg) = t.rates(k,j);
+        if any(t.selected(alg)==t.rates([1 end],j))
+            fprintf('  AVISO: eta de %s no limite da grelha (%g)\n',o.algorithms{alg},t.selected(alg));
+        end
+    end
+end
+
+function block = fit_final(d,net,t,o)
+    fit = algorithms(); ns = numel(o.finalSeeds);
+    block.theta = cell(3,ns); block.history = cell(3,ns); block.initialLayerNorm = nan(ns,2);
+    for i = 1:ns
+        seed = o.finalSeeds(i); theta0 = init_params(net,seed); o.orderSeed = o.seed+1000*seed;
+        [~,g] = loss_grad(theta0,net,d.Xtr,d.Ytr);
+        block.initialLayerNorm(i,:) = [norm(g(net.first(1):net.last(1))),norm(g(net.first(end):net.last(end)))];
+        for alg = 1:3
+            o.rate = t.selected(alg);
+            [th,h] = fit{alg}(theta0,net,d.Xtr,d.Ytr,d.Xva,d.Yva,o);
+            if ~strcmp(h.stop,'nonfinite')
+                h.train(h.cost+2:end) = h.train(h.cost+1);
+                h.val(h.cost+2:end)   = h.val(h.cost+1);
+            end
+            block.theta{alg,i} = th; block.history{alg,i} = h;
+        end
+    end
+end
