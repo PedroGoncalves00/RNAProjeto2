@@ -134,3 +134,42 @@ function d = partition(x,y,tr,va,te)
     d.Xtr = z(tr,:)'; d.Xva = z(va,:)'; d.Xte = z(te,:)';
     d.Ytr = v(tr)'; d.Yva = v(va)'; d.ytest = y(te); d.dim = size(x,2);
 end
+
+function net = network(d,a)
+    hidden = {10,100,10*ones(1,10)};
+    width = [d,hidden{a},1]; net.in = width(1:end-1); net.out = width(2:end);
+    net.depth = numel(net.out); len = (net.in+1).*net.out;
+    net.last = cumsum(len); net.first = [1,1+net.last(1:end-1)];
+    net.count = sum(len);
+end
+
+function theta = init_params(layers,seed)
+    net = as_net(layers); set_seed(seed); theta = zeros(net.count,1);
+    for k = 1:net.depth
+        u = net.in(k); v = net.out(k);
+        weights = (2*rand(v,u)-1)*sqrt(6/(u+v)); % Glorot uniform; zero biases
+        block = [weights,zeros(v,1)]; theta(net.first(k):net.last(k)) = block(:);
+    end
+end
+
+function [y,A,W] = predict(theta,net,x)
+    A = cell(1,net.depth+1); W = cell(1,net.depth); A{1} = x;
+    for k = 1:net.depth
+        block = reshape(theta(net.first(k):net.last(k)),net.out(k),net.in(k)+1);
+        W{k} = block(:,1:end-1);
+        z = W{k}*A{k} + block(:,end);
+        if k<net.depth, A{k+1} = tanh(z); else, A{k+1} = z; end
+    end
+    y = A{end};
+end
+
+function [f,g] = loss_grad(theta,net,x,y)
+    [pred,A,W] = predict(theta,net,x); err = pred-y; f = mean(err.^2);
+    if nargout<2, return; end
+    delta = 2*err/numel(err); g = zeros(size(theta));
+    for k = net.depth:-1:1
+        block = [delta*A{k}',sum(delta,2)];
+        g(net.first(k):net.last(k)) = block(:);
+        if k>1, delta = (W{k}'*delta).*(1-A{k}.^2); end
+    end
+end
