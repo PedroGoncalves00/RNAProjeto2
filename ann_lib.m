@@ -61,3 +61,76 @@ function net = as_net(layers)
     net.depth = numel(net.out); len = (net.in+1).*net.out;
     net.last = cumsum(len); net.first = [1,1+net.last(1:end-1)]; net.count = sum(len);
 end
+
+function d = load_concrete(folder,o)
+    a = dlmread(fullfile(folder,'concrete.csv'),',',1,0);
+    assert(isequal(size(a),[1030 9]) && all(isfinite(a(:))), 'Unexpected Concrete data');
+    [~,first] = unique(a,'rows','first');
+    first = sort(first); clean = a(first,:);
+    n = size(clean,1); set_seed(o.seed); order = randperm(n);
+    ntr = floor(.70*n); nva = floor(.15*n);
+    tr = order(1:ntr); va = order(ntr+(1:nva)); te = order(ntr+nva+1:end);
+    x = clean(:,1:8); x(:,8) = log1p(x(:,8));
+    d = partition(x,clean(:,9),tr,va,te);
+    d.name = 'Concrete'; d.unit = 'MPa'; d.raw = a; d.cleaned = clean;
+    d.sourceRows = first; d.testKnownMix = ismember(clean(te,1:7),clean(tr,1:7),'rows');
+    d.featureNames = {'Cement','Slag','Fly ash','Water','Superplasticizer','Coarse aggregate','Fine aggregate','log(1+age)'};
+end
+
+function d = load_melbourne(folder,~)
+    f = fopen(fullfile(folder,'melbourne.csv'),'rt');
+    assert(f>=0,'Could not open melbourne.csv'); cleanup = onCleanup(@() fclose(f));
+    raw = textscan(f,'%s','Delimiter',char(10),'Whitespace','');
+    lines = raw{1}; record = ~cellfun('isempty',regexp(lines,'^\s*"?\d{4}-\d{2}-\d{2}"?\s*,','once'));
+    fields = regexp(lines(record),'^\s*"?(\d{4}-\d{2}-\d{2})"?\s*,\s*"?([?]?[-+]?[0-9]+(?:\.[0-9]+)?)"?\s*$','tokens','once');
+    assert(~any(cellfun('isempty',fields)),'Malformed numerical temperature record');
+    dateText = cellfun(@(row) row{1},fields,'UniformOutput',false);
+    tempText = cellfun(@(row) row{2},fields,'UniformOutput',false);
+    dates = datenum(char(dateText),'yyyy-mm-dd');
+    marked = ~cellfun('isempty',strfind(tempText,'?'));
+    numericText = strrep(tempText,'?',''); 
+    numericFields = textscan(sprintf('%s\n',numericText{:}),'%f'); values = numericFields{1};
+    assert(numel(values)==3650 && all(isfinite(values)) && all(diff(dates)>0),'Unexpected Melbourne data');
+    gridDates = (dates(1):dates(end))'; series = nan(size(gridDates));
+    series(dates-dates(1)+1) = values;
+    [yr,~,~] = datevec(gridDates);
+    firstDay = datenum(yr,ones(size(yr)),ones(size(yr)));
+    nextYear = datenum(yr+1,ones(size(yr)),ones(size(yr)));
+    phase = 2*pi*(gridDates-firstDay)./(nextYear-firstDay);
+    calendar = [sin(phase),cos(phase)];
+    ntr = floor(.70*numel(dates)); nva = floor(.15*numel(dates));
+    trEnd = dates(ntr); vaEnd = dates(ntr+nva); innerEnd = dates(floor(.8*ntr));
+    candidates = [1 3 7 14]; maxLag = max(candidates); lags = nan(numel(series),maxLag);
+    for j = 1:maxLag
+        lags(j+1:end,j) = series(1:end-j); 
+    end
+    
+    common = isfinite(series) & all(isfinite(lags),2);
+    innerTrain = common & gridDates<=innerEnd;
+    innerVal = common & gridDates>innerEnd & gridDates<=trEnd;
+    scores = zeros(size(candidates));
+    for i = 1:numel(candidates)
+        design = [ones(numel(series),1),lags(:,1:candidates(i)),calendar];
+        w = design(innerTrain,:) \ series(innerTrain);
+        scores(i) = sqrt(mean((design(innerVal,:)*w-series(innerVal)).^2));
+    end
+    [~,i] = min(scores); p = candidates(i);
+    x = [lags(:,1:p),calendar]; keep = isfinite(series) & all(isfinite(x),2);
+    targetDates = gridDates(keep);
+    tr = find(targetDates<=trEnd); va = find(targetDates>trEnd & targetDates<=vaEnd);
+    te = find(targetDates>vaEnd); d = partition(x(keep,:),series(keep),tr,va,te);
+    d.name = 'Melbourne'; d.unit = '°C'; d.dates = targetDates;
+    d.gridDates = gridDates; d.series = series; d.obsDates = dates; d.values = values;
+    d.flagDates = dates(marked);
+    d.cutoffs = [innerEnd trEnd vaEnd]; d.p = p; d.candidates = candidates; d.lagScores = scores;
+    d.featureNames = [arrayfun(@(k) sprintf('lag%d',k),1:p,'UniformOutput',false),{'sin','cos'}];
+end
+
+function d = partition(x,y,tr,va,te)
+    d.tr = tr(:); d.va = va(:); d.te = te(:); d.x = x; d.y = y(:);
+    d.mx = mean(x(tr,:),1); d.sx = std(x(tr,:),0,1); d.sx(d.sx==0) = 1;
+    d.my = mean(y(tr)); d.sy = std(y(tr)); assert(d.sy>0);
+    z = (x-d.mx)./d.sx; v = (y(:)-d.my)/d.sy;
+    d.Xtr = z(tr,:)'; d.Xva = z(va,:)'; d.Xte = z(te,:)';
+    d.Ytr = v(tr)'; d.Yva = v(va)'; d.ytest = y(te); d.dim = size(x,2);
+end
