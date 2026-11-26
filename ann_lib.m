@@ -173,3 +173,16 @@ function [f,g] = loss_grad(theta,net,x,y)
         if k>1, delta = (W{k}'*delta).*(1-A{k}.^2); end
     end
 end
+
+function [absMax,relMax,normRel] = gradcheck(net,d,seed)
+    theta = init_params(net,seed); x = d.Xtr(:,1:8); y = d.Ytr(:,1:8);
+    [~,g] = loss_grad(theta,net,x,y); num = zeros(size(g));
+    for i = 1:numel(theta)
+        h = 1e-5*max(1,abs(theta(i))); plus = theta; minus = theta;
+        plus(i) = plus(i)+h; minus(i) = minus(i)-h;
+        num(i) = (loss_grad(plus,net,x,y)-loss_grad(minus,net,x,y))/(2*h);
+    end
+    absMax = max(abs(g-num));
+    relMax = max(abs(g-num)./max(1e-7,abs(g)+abs(num)));
+    normRel = norm(g-num)/max(eps,norm(g)+norm(num));
+end
