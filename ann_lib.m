@@ -397,3 +397,334 @@ function hist_simple(x,n,color)
     [counts,centres] = hist(x(isfinite(x)),n);
     bar(centres,counts,1,'FaceColor',color,'EdgeColor','none'); axis tight;
 end
+
+function explore(d,folder)
+    teal = [0.03 .43 .49]; blue = [.12 .35 .61]; rust = [.76 .31 .13];
+    if strcmp(d.name,'Concrete')
+        names = {'Cimento','Escória','Cinza volante','Água','Superplast.','Agreg. grosso','Agreg. fino','Idade','Resistência'};
+        units = [repmat({'kg/m^3'},1,7),{'dias','MPa'}];
+        f = new_fig(845,620);
+        for i = 1:9
+            subplot(3,3,i); hist_simple(d.raw(:,i),18,teal);
+            title(names{i}); xlabel(units{i}); ylabel('Contagem');
+        end
+        save_fig(f,folder,'concrete_hist');
+        f = new_fig(840,460);
+        ticks = {[100 300 500],[0 150 300],[0 100 200],[130 180 230],[0 15 30],[800 950 1100],[600 800 1000],[1 180 365]};
+        for i = 1:8
+            subplot(2,4,i); plot(d.raw(:,i),d.raw(:,9),'.','Color',blue,'MarkerSize',3);
+            xlabel([names{i} ' (' units{i} ')']); ylabel('MPa'); axis tight; set(gca,'XTick',ticks{i});
+        end
+        save_fig(f,folder,'concrete_scatter');
+        f = new_fig(500,420); R = corrcoef(d.raw); imagesc(R,[-1 1]); axis image;
+        k = 65; cold = [.13,.32,.62]; hot = [.74,.25,.17];
+        map = [linspace(cold(1),1,k)',linspace(cold(2),1,k)',linspace(cold(3),1,k)';...
+               linspace(1,hot(1),k)',linspace(1,hot(2),k)',linspace(1,hot(3),k)']; colormap(map); colorbar;
+        short = {'Cim','Esc','Cin','Agu','Sup','Gro','Fin','Ida','Res'};
+        set(gca,'XTick',1:9,'XTickLabel',short,'YTick',1:9,'YTickLabel',short);
+        for i=1:9
+            for j=1:9
+                col=[.13 .14 .16]; if abs(R(i,j))>.68, col=[1 1 1]; end
+                text(j,i,sprintf('%.2f',R(i,j)),'HorizontalAlignment','center','Color',col,'FontSize',8);
+            end
+        end
+        save_fig(f,folder,'concrete_corr'); return;
+    end
+    times = d.gridDates; val = d.series; obs = d.obsDates; y = d.values;
+    [~,mo,dy] = datevec(obs); months = accumarray(mo,y,[12 1],@mean);
+    anchor = datenum(2000*ones(size(mo)),mo,dy)-datenum(2000,1,1)+1;
+    cycle = accumarray(anchor,y,[366 1],@mean,NaN); smooth = nan(366,1);
+    for i=1:366
+        v = cycle(mod((i-15:i+15)-1,366)+1); smooth(i) = mean(v(isfinite(v)));
+    end
+    dif = diff(val); finiteDiff = dif(isfinite(dif)); center = median(finiteDiff);
+    thresh = 3*1.4826*median(abs(finiteDiff-center)); flags = abs(dif-center)>thresh;
+    f = new_fig(910,590);
+    subplot(2,2,1); plot(times,val,'Color',teal,'LineWidth',.55); hold on;
+    plot(times([false;flags]),val([false;flags]),'.','Color',rust,'MarkerSize',5);
+    set(gca,'XTick',datenum(1981:2:1991,1,1)); datetick('x','yyyy','keepticks'); xlim([times(1) times(end)]);
+    ylabel('Temperatura (°C)'); title('Série diária e saltos sinalizados');
+    subplot(2,2,2); hist_simple(y,24,teal); xlabel('Temperatura (°C)'); ylabel('Dias'); title('Distribuição');
+    subplot(2,2,3); bar(1:12,months,.8,'FaceColor',teal,'EdgeColor','none');
+    set(gca,'XTick',1:12,'XTickLabel',{'J','F','M','A','M','J','J','A','S','O','N','D'}); xlim([.3 12.7]);
+    ylabel('Média (°C)'); title('Médias mensais');
+    subplot(2,2,4); plot(1:366,cycle,'Color',[.65 .79 .80]); hold on;
+    plot(1:366,smooth,'Color',blue,'LineWidth',1.9); xlim([1 366]); xlabel('Dia do calendário'); ylabel('Média (°C)');
+    title('Ciclo anual e média móvel de 31 dias');
+    save_fig(f,folder,'melbourne_eda');
+    f = new_fig(900,302);
+    subplot(1,2,1); c = sample_acf(val,400); plot(0:400,c,'Color',teal,'LineWidth',1.25); hold on;
+    plot([0 400],[0 0],'k:'); xlim([0 400]); ylim([-.8 1.05]); xlabel('Desfasamento (dias)'); ylabel('Correlação'); title('Autocorrelação');
+    subplot(1,2,2); plot(val(1:end-1),val(2:end),'.','Color',blue,'MarkerSize',3);
+    xlabel('T(t) (°C)'); ylabel('T(t+1) (°C)'); title('Dias consecutivos'); axis tight;
+    save_fig(f,folder,'melbourne_dependencia');
+end
+
+function colors = palette()
+    colors = [.10 .36 .68; .78 .32 .10; .02 .47 .40];
+end
+
+function progress_plot(block,o,folder,name,byTime)
+    f = new_fig(760,320); colors = palette(); fields = {'train','val'};
+    for panel = 1:2
+        subplot(1,2,panel); hold on; grids = cell(1,3); mid = grids;
+        for j = 1:3
+            runs = block.history(j,:); ns = numel(runs);
+            if byTime
+                gridx = linspace(0,median(cellfun(@(h) h.elapsed,runs)),65);
+                values = nan(numel(gridx),ns);
+                for r=1:ns
+                    h=runs{r}; tt=h.seconds(1:h.cost+1); v=h.(fields{panel});
+                    for ix=1:numel(gridx)
+                        at = find(tt<=gridx(ix),1,'last'); values(ix,r)=v(at);
+                    end
+                end
+            else
+                gridx = 0:o.budget; values = nan(numel(gridx),ns);
+                for r=1:ns
+                    values(:,r) = runs{r}.(fields{panel});
+                end
+            end
+            q = nan(numel(gridx),3);
+            for ix=1:numel(gridx), q(ix,:)=sample_quantile(values(ix,:),[.25 .5 .75]); end
+            mask=all(isfinite(q),2); gx=gridx(mask); qq=q(mask,:);
+            shade = .77+.23*colors(j,:);
+            fill([gx(:);flipud(gx(:))],[qq(:,1);flipud(qq(:,3))],shade,'EdgeColor','none','FaceAlpha',.52);
+            grids{j} = gx; mid{j} = qq(:,2);
+        end
+        lines = cell(1,3);
+        for j=1:3
+            lines{j}=plot(grids{j},mid{j},'Color',colors(j,:),'LineWidth',2.35);
+        end
+        set(gca,'YScale','log','YLim',o.plotLimits,'YTick',o.plotTicks,...
+            'YTickLabel',arrayfun(@(v) sprintf('%g',v),o.plotTicks,'UniformOutput',false),...
+            'YGrid','on','XGrid','off','GridLineStyle',':','GridColor',[.72 .76 .79]);
+        ylabel('MSE normalizado');
+        if byTime, xlabel('Tempo (s)'); else, xlabel('Épocas equivalentes'); xlim([0 o.budget]); end
+        if panel==1, title('Treino'); else, title('Validação'); end
+        if panel==1, legend([lines{:}],o.algorithms,'Location','northeast','FontSize',8); end
+    end
+    save_fig(f,folder,name);
+end
+
+function progress_overview(d,blocks,o,folder)
+    
+    f=new_fig(1150,450); colors=palette(); names={'A  Referência','B  Larga','C  Profunda'};
+    fields={'train','val'}; rows={'Treino (MSE)','Validação (MSE)'};
+    ticks = o.plotTicks;
+    xt = round(linspace(0,o.budget,5));
+    for row=1:2
+        for a=1:3
+            left=.075+(a-1)*.32; bottom=.57-(row-1)*.43;
+            axes('Position',[left bottom .263 .31]); hold on;
+            med=cell(1,3); xx=0:o.budget;
+            for j=1:3
+                vs=cellfun(@(h) h.(fields{row}),blocks{a}.history(j,:),'UniformOutput',false);
+                v=[vs{:}]; q=nan(size(v,1),3);
+                for i=1:size(v,1), q(i,:)=sample_quantile(v(i,:),[.25 .5 .75]); end
+                med{j}=q(:,2); ok=isfinite(q(:,2)); gx=xx(ok); q=q(ok,:);
+                fill([gx(:);flipud(gx(:))],[q(:,1);flipud(q(:,3))],.73+.27*colors(j,:),'EdgeColor','none','FaceAlpha',.55);
+            end
+            for j=1:3, plot(xx,med{j},'LineWidth',2.7,'Color',colors(j,:)); end
+            set(gca,'FontSize',14,'YScale','log','YLim',o.plotLimits,'YTick',ticks,...
+                'YTickLabel',arrayfun(@(v) sprintf('%g',v),ticks,'UniformOutput',false),...
+                'XTick',xt,'XLim',[0 o.budget],'YGrid','on','GridLineStyle',':','TickDir','out');
+            if row==1, title(names{a},'FontSize',17); set(gca,'XTickLabel',{}); end
+            if a==1, ylabel(rows{row},'FontSize',14); end
+            if row==2 && a==2, xlabel('Épocas equivalentes','FontSize',14); end
+        end
+    end
+    save_fig(f,folder,[lower(d.name) '_convergencia_conjunta']);
+end
+
+function draw_boxplots(matrix,labels)
+    colors = palette(); hold on;
+    for k=1:size(matrix,2)
+        v = sort(matrix(:,k)); q=sample_quantile(v,[.25 .5 .75]); gap=q(3)-q(1);
+        lo=min(v(v>=q(1)-1.5*gap)); hi=max(v(v<=q(3)+1.5*gap)); c=colors(1+mod(k-1,3),:);
+        fill(k+[-.30 .30 .30 -.30],[q(1) q(1) q(3) q(3)],.7+.3*c,'EdgeColor',c);
+        plot([k-.30 k+.30],[q(2) q(2)],'Color',c,'LineWidth',2);
+        plot([k k],[lo q(1)],'Color',c); plot([k k],[q(3) hi],'Color',c);
+        plot(k+[-.15 .15],[lo lo],'Color',c); plot(k+[-.15 .15],[hi hi],'Color',c);
+        out=v(v<lo | v>hi); plot(k*ones(size(out)),out,'o','Color',c,'MarkerSize',3);
+    end
+    set(gca,'XTick',1:numel(labels),'XTickLabel',labels); xlim([.4 numel(labels)+.6]);
+    set(gca,'YGrid','on','GridLineStyle',':','GridColor',[.72 .76 .79]);
+end
+
+function plot_results(d,blocks,e,o,folder)
+    prefix=lower(d.name); ns=numel(o.finalSeeds); boxes=zeros(ns,9); labs=cell(1,9);
+    
+    bound=[Inf -Inf];
+    for a=1:3
+        for j=1:3
+            for field={'train','val'}
+                m=cellfun(@(h) h.(field{1}),blocks{a}.history(j,:),'UniformOutput',false);
+                values=[m{:}];
+                for i=1:size(values,1)
+                    q=sample_quantile(values(i,:),[.25 .75]);
+                    if all(isfinite(q)), bound=[min(bound(1),q(1)) max(bound(2),q(2))]; end
+                end
+            end
+        end
+    end
+    o.plotLimits=[.9*bound(1) 1.15*bound(2)];
+    ticks=[.02 .04 .08 .1 .2 .3 .4 .6 .8 1 1.5 2 3 5 10];
+    o.plotTicks=ticks(ticks>o.plotLimits(1) & ticks<o.plotLimits(2));
+    if numel(o.plotTicks)<2
+        o.plotTicks = logspace(log10(o.plotLimits(1)),log10(o.plotLimits(2)),4);
+    end
+    for a=1:3
+        suffix = char(64+a);
+        progress_plot(blocks{a},o,folder,[prefix '_curva_' suffix],false);
+        progress_plot(blocks{a},o,folder,[prefix '_tempo_' suffix],true);
+        for j=1:3
+            k=3*(a-1)+j; boxes(:,k)=reshape(e.scores(a,j,:,2),[],1);
+            labs{k}=[suffix '-' o.algorithms{j}];
+        end
+    end
+    progress_overview(d,blocks,o,folder);
+    f=new_fig(900,360); draw_boxplots(boxes,labs); ylabel(['RMSE (' d.unit ')']); save_fig(f,folder,[prefix '_boxes']);
+    win=e.choice; y=d.ytest(:); p=e.pred{win(1),win(2)}(:,win(3)); err=p-y;
+    blue=[.10 .36 .68]; rust=[.78 .32 .10]; f=new_fig(860,340);
+    if strcmp(d.name,'Concrete')
+        subplot(1,2,1); plot(y,p,'o','Color',blue,'MarkerSize',3); hold on;
+        span=[min([y;p]) max([y;p])]; plot(span,span,'k--'); xlim(span); ylim(span);
+        xlabel('Medido (MPa)'); ylabel('Previsto (MPa)'); title('Resistência no teste'); axis square;
+        subplot(1,2,2); hist_simple(err,16,blue); xlabel('Previsto - medido (MPa)'); ylabel('Amostras'); title('Resíduos');
+    else
+        close(f); f=new_fig(880,590);
+        subplot(2,2,[1 2]); dates=d.dates(d.te); plot(dates,y,'Color',[.40 .45 .49]); hold on;
+        plot(dates,p,'Color',rust); datetick('x','mmm yy'); xlim([dates(1) dates(end)]);
+        ylabel('°C'); title('Previsão diária no teste'); legend({'Observada','Prevista'},'Location','northeast');
+        subplot(2,2,3); nz=min(42,numel(y)); plot(dates(1:nz),y(1:nz),'Color',[.35 .4 .44]); hold on;
+        plot(dates(1:nz),p(1:nz),'Color',rust,'LineWidth',1.45); datetick('x','dd/mm'); xlim([dates(1) dates(nz)]);
+        xlabel('Dia/mes'); ylabel('°C'); title('Primeiros 42 dias');
+        subplot(2,2,4); hist_simple(err,20,blue); xlabel('Prevista - observada (°C)'); ylabel('Dias'); title('Resíduos');
+    end
+    save_fig(f,folder,[prefix '_previsoes']);
+end
+
+
+function write_results(data,tunings,blocks,ev,checks,o,out)
+    if ~exist(out,'dir'), mkdir(out); end
+    names={'execucoes','historico','afinacao','resumo','referencias','previsoes','gradientes','particoes','estatisticas'};
+    heads={...
+     'dataset,arch,algorithm,seed,test_mse,test_rmse,test_mae,test_r2,elapsed_s,best_cost,best_val,cost,full_grad_calls,minibatch_grad_calls,accepted,failed,stopping', ...
+     'dataset,arch,algorithm,seed,epoch_equiv,seconds,train_mse_scaled,val_mse_scaled', ...
+     'dataset,arch,algorithm,learning_rate,tune_seed,best_val_scaled,selected', ...
+     'dataset,arch,algorithm,rmse_mean,rmse_sd,rmse_median,rmse_best,rmse_worst,r2_mean,r2_sd,r2_median,r2_best,r2_worst,time_mean_s', ...
+     'dataset,reference,test_mse,test_rmse,test_mae,test_r2', ...
+     'dataset,source_record_or_date,arch,algorithm,seed,measured,predicted,residual_pred_minus_measured', ...
+     'dataset,arch,params,max_absolute,max_relative,relative_norm', ...
+     'dataset,partition,source_record_or_target_date', ...
+     'dataset,variable,min,q1,median,q3,max,mean,sd'};
+    f=zeros(1,numel(names)); guards=cell(size(f));
+    for i=1:numel(names)
+        f(i)=fopen(fullfile(out,[names{i} '.csv']),'wt'); assert(f(i)>=0,'Cannot write results');
+        handle=f(i); guards{i}=onCleanup(@() fclose(handle)); fprintf(f(i),'%s\n',heads{i});
+    end
+    for k=1:numel(data)
+        d=data{k}; e=ev{k}; tag=d.name;
+        if k==1
+            keys=arrayfun(@(i) sprintf('%d',i),d.sourceRows,'UniformOutput',false);
+            vals=d.raw; feats={'cement','slag','fly_ash','water','superplasticizer','coarse_aggregate','fine_aggregate','age','strength'};
+        else
+            keys=cellstr(datestr(d.dates,'yyyy-mm-dd')); vals=d.values; feats={'temperature'};
+        end
+        for j=1:size(vals,2)
+            v=vals(:,j); q=sample_quantile(v,[0 .25 .5 .75 1]);
+            fprintf(f(9),'%s,%s,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g\n',tag,feats{j},q,mean(v),std(v));
+        end
+        sets={d.tr,d.va,d.te}; labels={'train','validation','test'};
+        for j=1:3
+            for idx=sets{j}(:)', fprintf(f(8),'%s,%s,%s\n',tag,labels{j},keys{idx}); end
+        end
+        for a=1:3
+            A=char(64+a); t=tunings{k,a}; block=blocks{k,a}; net=network(d.dim,a);
+            fprintf(f(7),'%s,%s,%d,%.12g,%.12g,%.12g\n',tag,A,net.count,reshape(checks(k,a,:),1,3));
+            for jj=1:2
+                j=2*jj-1;
+                for vi=1:size(t.rates,1)
+                    for r=1:numel(o.tuneSeeds)
+                        fprintf(f(3),'%s,%s,%s,%.12g,%d,%.12g,%d\n',tag,A,o.algorithms{j},t.rates(vi,jj),o.tuneSeeds(r),t.scores(vi,r,jj),t.rates(vi,jj)==t.selected(j));
+                    end
+                end
+            end
+            for j=1:3
+                for r=1:numel(o.finalSeeds)
+                    h=block.history{j,r}; m=reshape(e.scores(a,j,r,:),1,4);
+                    fprintf(f(1),'%s,%s,%s,%d,%.12g,%.12g,%.12g,%.12g,%.9g,%d,%.12g,%d,%.6g,%d,%d,%d,%s\n',...
+                      tag,A,o.algorithms{j},o.finalSeeds(r),m,h.elapsed,h.bestCost,h.bestVal,h.cost,h.fullGrads,h.batchGrads,h.accepted,h.failed,h.stop);
+                    for c=0:h.cost
+                        fprintf(f(2),'%s,%s,%s,%d,%d,%.9g,%.12g,%.12g\n',tag,A,o.algorithms{j},o.finalSeeds(r),c,h.seconds(c+1),h.train(c+1),h.val(c+1));
+                    end
+                end
+                rm=reshape(e.scores(a,j,:,2),[],1); r2=reshape(e.scores(a,j,:,4),[],1);
+                ts=cellfun(@(h) h.elapsed,block.history(j,:));
+                fprintf(f(4),'%s,%s,%s,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.9g\n',...
+                     tag,A,o.algorithms{j},mean(rm),std(rm),median(rm),min(rm),max(rm),mean(r2),std(r2),median(r2),max(r2),min(r2),mean(ts));
+            end
+        end
+        for j=1:numel(e.refNames)
+            fprintf(f(5),'%s,%s,%.12g,%.12g,%.12g,%.12g\n',tag,e.refNames{j},e.refScores(j,:));
+        end
+        c=e.choice; p=e.pred{c(1),c(2)}(:,c(3));
+        for i=1:numel(p)
+            fprintf(f(6),'%s,%s,%s,%s,%d,%.12g,%.12g,%.12g\n',tag,keys{d.te(i)},char(64+c(1)),o.algorithms{c(2)},o.finalSeeds(c(3)),d.ytest(i),p(i),p(i)-d.ytest(i));
+        end
+    end
+end
+
+function summary_text(data,tunings,blocks,ev,checks,o,out)
+    ln = {}; nm = 'ABC'; ns = numel(o.finalSeeds);
+    for k = 1:numel(data)
+        d = data{k}; e = ev{k}; B = blocks(k,:);
+        ln{end+1} = sprintf('==== %s ====',d.name);
+        if strcmp(d.name,'Concrete')
+            ln{end+1} = sprintf('Linhas brutas: %d | duplicados removidos: %d | usadas: %d', ...
+                size(d.raw,1),size(d.raw,1)-size(d.cleaned,1),size(d.cleaned,1));
+            ln{end+1} = sprintf('Teste cuja mistura (7 colunas) tambem esta no treino: %.1f%%',100*mean(d.testKnownMix));
+        else
+            ln{end+1} = sprintf('Janela p=%d | candidatos %s | RMSE interno %s',d.p,mat2str(d.candidates),mat2str(d.lagScores,4));
+            ln{end+1} = sprintf('Valores marcados com ? no ficheiro: %d',numel(d.flagDates));
+        end
+        for a = 1:3
+            net = network(d.dim,a); t = tunings{k,a};
+            ln{end+1} = sprintf('Arq %s (%d params): gradcheck rel.max=%.2e norm.rel=%.2e | eta GD=%g | eta Adam=%g', ...
+                nm(a),net.count,checks(k,a,2),checks(k,a,3),t.selected(1),t.selected(3));
+        end
+        for m = [2 4]
+            if m==2, ln{end+1} = sprintf('RMSE de teste (%s), media +- dp',d.unit);
+            else, ln{end+1} = 'R2 de teste, media +- dp'; end
+            ln{end+1} = sprintf('%-6s %-22s %-22s %-22s','Arq',o.algorithms{:});
+            for a = 1:3
+                c = cell(1,3);
+                for j = 1:3
+                    v = reshape(e.scores(a,j,:,m),[],1); c{j} = sprintf('%.4f +- %.4f',mean(v),std(v));
+                end
+                ln{end+1} = sprintf('%-6s %-22s %-22s %-22s',nm(a),c{:});
+            end
+        end
+        for j = 1:numel(e.refNames)
+            ln{end+1} = sprintf('Referencia %-18s RMSE=%.4f MAE=%.4f R2=%.4f', ...
+                e.refNames{j},e.refScores(j,2),e.refScores(j,3),e.refScores(j,4));
+        end
+        ln{end+1} = 'Diagnosticos (falhas inclui paragem da pesquisa em linha; gap = MSE val - MSE treino no melhor ponto, normalizado):';
+        for a = 1:3
+            gr = median(B{a}.initialLayerNorm(:,1)./B{a}.initialLayerNorm(:,2));
+            for j = 1:3
+                H = B{a}.history(j,:);
+                nfail = sum(cellfun(@(h) h.failed,H));
+                bc  = median(cellfun(@(h) h.bestCost,H));
+                gap = median(cellfun(@(h) h.bestVal-h.train(h.bestCost+1),H));
+                spe = mean(cellfun(@(h) h.elapsed/max(h.cost,1),H));
+                ln{end+1} = sprintf('%s-%-4s falhas=%d/%d melhor_epoca=%g gap=%.4f s/epoca=%.4f |g1|/|gL|=%.3g', ...
+                    nm(a),o.algorithms{j},nfail,ns,bc,gap,spe,gr);
+            end
+        end
+        ln{end+1} = '';
+    end
+    f = fopen(fullfile(out,'resumo.txt'),'wt'); assert(f>=0,'Cannot write resumo.txt');
+    fprintf(f,'%s\n',ln{:}); fclose(f); fprintf('%s\n',ln{:});
+end
