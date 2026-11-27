@@ -360,3 +360,40 @@ function p = linear_fit(x,d)
     coef = design(d.tr,:) \ d.y(d.tr);
     p = design(d.te,:)*coef;
 end
+
+function q = sample_quantile(v,p)
+    v = sort(v(isfinite(v))); q = nan(size(p));
+    if isempty(v), return; end
+    x = 1+(numel(v)-1)*p;
+    for i = 1:numel(p)
+        low = floor(x(i)); high = ceil(x(i));
+        q(i) = v(low)+(x(i)-low)*(v(high)-v(low));
+    end
+end
+
+function c = sample_acf(x,maxLag)
+    % Pearson correlation of available endpoints exactly j calendar days apart.
+    c = nan(maxLag+1,1);
+    for j = 0:maxLag
+        a = x(1:end-j); b = x(1+j:end); ok = isfinite(a)&isfinite(b);
+        if sum(ok)<2, continue; end
+        a = a(ok)-mean(a(ok)); b = b(ok)-mean(b(ok));
+        c(j+1) = sum(a.*b)/sqrt(sum(a.^2)*sum(b.^2));
+    end
+end
+
+function f = new_fig(w,h)
+    f = figure('Visible','off','Color','w','Units','pixels','Position',[60 60 w h]);
+    set(f,'DefaultAxesFontName','DejaVu Sans','DefaultTextFontName','DejaVu Sans',...
+          'DefaultAxesFontSize',10,'DefaultAxesBox','off','PaperPositionMode','auto');
+end
+
+function save_fig(f,folder,name)
+    if ~exist(folder,'dir'), mkdir(folder); end
+    print(f,fullfile(folder,[name '.png']),'-dpng','-r140'); close(f);
+end
+
+function hist_simple(x,n,color)
+    [counts,centres] = hist(x(isfinite(x)),n);
+    bar(centres,counts,1,'FaceColor',color,'EdgeColor','none'); axis tight;
+end
