@@ -372,7 +372,6 @@ function q = sample_quantile(v,p)
 end
 
 function c = sample_acf(x,maxLag)
-    % Pearson correlation of available endpoints exactly j calendar days apart.
     c = nan(maxLag+1,1);
     for j = 0:maxLag
         a = x(1:end-j); b = x(1+j:end); ok = isfinite(a)&isfinite(b);
@@ -384,8 +383,7 @@ end
 
 function f = new_fig(w,h)
     f = figure('Visible','off','Color','w','Units','pixels','Position',[60 60 w h]);
-    set(f,'DefaultAxesFontName','DejaVu Sans','DefaultTextFontName','DejaVu Sans',...
-          'DefaultAxesFontSize',10,'DefaultAxesBox','off','PaperPositionMode','auto');
+    set(f,'DefaultAxesFontName','DejaVu Sans','DefaultTextFontName','DejaVu Sans','DefaultAxesFontSize',10,'DefaultAxesBox','off','PaperPositionMode','auto');
 end
 
 function save_fig(f,folder,name)

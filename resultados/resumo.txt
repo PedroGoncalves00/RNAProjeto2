@@ -1,0 +1,59 @@
+==== Concrete ====
+Linhas brutas: 1030 | duplicados removidos: 25 | usadas: 1005
+Teste cuja mistura (7 colunas) tambem esta no treino: 73.7%
+Arq A (101 params): gradcheck rel.max=2.50e-09 norm.rel=4.19e-11 | eta GD=0.1 | eta Adam=0.01
+Arq B (1001 params): gradcheck rel.max=3.11e-07 norm.rel=3.02e-11 | eta GD=0.0316228 | eta Adam=0.00316228
+Arq C (1091 params): gradcheck rel.max=2.69e-07 norm.rel=5.47e-11 | eta GD=0.0316228 | eta Adam=0.00316228
+RMSE de teste (MPa), media +- dp
+Arq    GD                     BFGS                   Adam                  
+A      5.2193 +- 0.2401       5.1351 +- 0.2849       5.2116 +- 0.2175      
+B      4.5130 +- 0.1216       4.5041 +- 0.2082       4.4308 +- 0.1670      
+C      5.0960 +- 0.2831       5.0434 +- 0.4196       5.2000 +- 0.3353      
+R2 de teste, media +- dp
+Arq    GD                     BFGS                   Adam                  
+A      0.8958 +- 0.0096       0.8991 +- 0.0113       0.8962 +- 0.0086      
+B      0.9222 +- 0.0042       0.9224 +- 0.0072       0.9250 +- 0.0056      
+C      0.9006 +- 0.0112       0.9023 +- 0.0172       0.8964 +- 0.0134      
+Referencia OLS_raw_age        RMSE=9.5839 MAE=7.5869 R2=0.6494
+Referencia OLS_log_age        RMSE=6.5618 MAE=5.1215 R2=0.8357
+Diagnosticos (falhas inclui paragem da pesquisa em linha; gap = MSE val - MSE treino no melhor ponto, normalizado):
+A-GD   falhas=0/30 melhor_epoca=326 gap=0.0437 s/epoca=0.0175 |g1|/|gL|=1.3
+A-BFGS falhas=0/30 melhor_epoca=172 gap=0.0450 s/epoca=0.0018 |g1|/|gL|=1.3
+A-Adam falhas=0/30 melhor_epoca=266.5 gap=0.0501 s/epoca=0.0186 |g1|/|gL|=1.3
+B-GD   falhas=0/30 melhor_epoca=470 gap=0.0375 s/epoca=0.0203 |g1|/|gL|=1.02
+B-BFGS falhas=0/30 melhor_epoca=125.5 gap=0.0531 s/epoca=0.0161 |g1|/|gL|=1.02
+B-Adam falhas=0/30 melhor_epoca=231 gap=0.0471 s/epoca=0.0223 |g1|/|gL|=1.02
+C-GD   falhas=0/30 melhor_epoca=381.5 gap=0.0605 s/epoca=0.0416 |g1|/|gL|=0.948
+C-BFGS falhas=0/30 melhor_epoca=131.5 gap=0.0607 s/epoca=0.0190 |g1|/|gL|=0.948
+C-Adam falhas=0/30 melhor_epoca=237 gap=0.0709 s/epoca=0.0437 |g1|/|gL|=0.948
+
+==== Melbourne ====
+Janela p=3 | candidatos [1 3 7 14] | RMSE interno [2.437 2.435 2.442 2.452]
+Valores marcados com ? no ficheiro: 3
+Arq A (71 params): gradcheck rel.max=4.25e-10 norm.rel=1.47e-11 | eta GD=0.0316228 | eta Adam=0.00316228
+Arq B (701 params): gradcheck rel.max=9.22e-09 norm.rel=2.75e-11 | eta GD=0.1 | eta Adam=0.001
+Arq C (1061 params): gradcheck rel.max=5.21e-08 norm.rel=2.13e-11 | eta GD=0.00316228 | eta Adam=0.000316228
+RMSE de teste (°C), media +- dp
+Arq    GD                     BFGS                   Adam                  
+A      2.1558 +- 0.0115       2.1510 +- 0.0160       2.1521 +- 0.0130      
+B      2.1741 +- 0.0160       2.1588 +- 0.0096       2.1526 +- 0.0061      
+C      2.1666 +- 0.0166       2.1659 +- 0.0165       2.1570 +- 0.0129      
+R2 de teste, media +- dp
+Arq    GD                     BFGS                   Adam                  
+A      0.6942 +- 0.0033       0.6956 +- 0.0045       0.6953 +- 0.0037      
+B      0.6890 +- 0.0046       0.6934 +- 0.0027       0.6951 +- 0.0017      
+C      0.6911 +- 0.0047       0.6913 +- 0.0047       0.6939 +- 0.0037      
+Referencia Persistence        RMSE=2.5722 MAE=2.0365 R2=0.5647
+Referencia AR_lags            RMSE=2.3697 MAE=1.8684 R2=0.6305
+Referencia AR_lags_calendar   RMSE=2.1919 MAE=1.7253 R2=0.6839
+Diagnosticos (falhas inclui paragem da pesquisa em linha; gap = MSE val - MSE treino no melhor ponto, normalizado):
+A-GD   falhas=0/30 melhor_epoca=236.5 gap=-0.0463 s/epoca=0.0577 |g1|/|gL|=1.08
+A-BFGS falhas=0/30 melhor_epoca=157.5 gap=-0.0317 s/epoca=0.0023 |g1|/|gL|=1.08
+A-Adam falhas=0/30 melhor_epoca=202.5 gap=-0.0409 s/epoca=0.0612 |g1|/|gL|=1.08
+B-GD   falhas=0/30 melhor_epoca=226 gap=-0.0508 s/epoca=0.0668 |g1|/|gL|=1.01
+B-BFGS falhas=0/30 melhor_epoca=89.5 gap=-0.0376 s/epoca=0.0162 |g1|/|gL|=1.01
+B-Adam falhas=0/30 melhor_epoca=243 gap=-0.0432 s/epoca=0.0722 |g1|/|gL|=1.01
+C-GD   falhas=0/30 melhor_epoca=256 gap=-0.0453 s/epoca=0.1426 |g1|/|gL|=1.35
+C-BFGS falhas=0/30 melhor_epoca=60.5 gap=-0.0288 s/epoca=0.0220 |g1|/|gL|=1.35
+C-Adam falhas=0/30 melhor_epoca=127 gap=-0.0364 s/epoca=0.1485 |g1|/|gL|=1.35
+

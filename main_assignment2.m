@@ -28,3 +28,18 @@ for k=1:2
         tunings{k,a}=L.tune(d,net,o);
     end
 end
+
+for k=1:2
+    for a=1:3
+        net=L.network(data{k}.dim,a);
+        fprintf('Final fits: %s / %s, seeds 1..30\n',data{k}.name,char(64+a));
+        blocks{k,a}=L.fit_final(data{k},net,tunings{k,a},o);
+    end
+end
+ev=cell(1,2);
+for k=1:2, ev{k}=L.evaluate(data{k},blocks(k,:),o); end
+L.write_results(data,tunings,blocks,ev,checks,o,outputDir);
+L.summary_text(data,tunings,blocks,ev,checks,o,outputDir);
+save(fullfile(outputDir,'estudo.mat'),'data','tunings','blocks','ev','checks','o','-v7');
+for k=1:2, L.plot_results(data{k},blocks(k,:),ev{k},o,figureDir); end
+fprintf('Completed. Results and run histories are in %s\n',outputDir);
