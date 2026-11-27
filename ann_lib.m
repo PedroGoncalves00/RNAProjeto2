@@ -147,7 +147,7 @@ function theta = init_params(layers,seed)
     net = as_net(layers); set_seed(seed); theta = zeros(net.count,1);
     for k = 1:net.depth
         u = net.in(k); v = net.out(k);
-        weights = (2*rand(v,u)-1)*sqrt(6/(u+v)); % Glorot uniform; zero biases
+        weights = (2*rand(v,u)-1)*sqrt(6/(u+v));
         block = [weights,zeros(v,1)]; theta(net.first(k):net.last(k)) = block(:);
     end
 end
@@ -232,7 +232,7 @@ function [best,h] = train_mini(theta,layers,Xtr,ytr,Xva,yva,o,adam)
         h.accepted = ep; h.seconds(ep+1) = toc(clock);
     end
     h.elapsed = toc(clock);
-    h.fullGrads = h.batchGrads*o.batch/n;   % equivalente em gradientes de dataset completo
+    h.fullGrads = h.batchGrads*o.batch/n;
 end
 
 function [best,h] = train_bfgs(theta,layers,Xtr,ytr,Xva,yva,o)
@@ -254,7 +254,7 @@ function [best,h] = train_bfgs(theta,layers,Xtr,ytr,Xva,yva,o)
             if isfinite(fc) && all(isfinite(gc)) && fc<=f+o.armijo*alpha*slope
                 s = candidate-theta; y = gc-g; ys = y'*s;
                 if ys>1e-10*norm(y)*norm(s)
-                    if first, H = (ys/(y'*y))*eye(P); first = false; end  % escala inicial de H
+                    if first, H = (ys/(y'*y))*eye(P); first = false; end
                     Hy = H*y;
                     v = ((1+(y'*Hy)/ys)/(2*ys))*s-Hy/ys;
                     H = H + s*v' + v*s';
@@ -323,7 +323,6 @@ end
 
 function e = evaluate(d,blocks,o)
     ns = numel(o.finalSeeds); vmean = zeros(3,3); e.bestVals = cell(3,3);
-    % Freeze the combination and its representative seed using validation only.
     for a = 1:3
         for j = 1:3
             vv = cellfun(@(h) h.bestVal,blocks{a}.history(j,:));
@@ -333,7 +332,6 @@ function e = evaluate(d,blocks,o)
     [~,winner] = min(vmean(:)); [wa,wj] = ind2sub([3,3],winner);
     v = e.bestVals{wa,wj}; [~,rep] = min(abs(v-median(v)));
     e.choice = [wa,wj,rep]; e.scores = zeros(3,3,ns,4);
-    % One test prediction vector per fitted checkpoint; reuse it for every diagnostic.
     for a = 1:3
         net = network(d.dim,a);
         for j = 1:3
