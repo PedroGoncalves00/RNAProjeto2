@@ -315,3 +315,50 @@ function block = fit_final(d,net,t,o)
         end
     end
 end
+
+function m = metrics(y,p)
+    y = y(:); p = p(:); e = p-y; mse = mean(e.^2);
+    m = [mse,sqrt(mse),mean(abs(e)),1-sum(e.^2)/sum((y-mean(y)).^2)];
+end
+
+function e = evaluate(d,blocks,o)
+    ns = numel(o.finalSeeds); vmean = zeros(3,3); e.bestVals = cell(3,3);
+    % Freeze the combination and its representative seed using validation only.
+    for a = 1:3
+        for j = 1:3
+            vv = cellfun(@(h) h.bestVal,blocks{a}.history(j,:));
+            e.bestVals{a,j} = vv; vmean(a,j) = mean(vv);
+        end
+    end
+    [~,winner] = min(vmean(:)); [wa,wj] = ind2sub([3,3],winner);
+    v = e.bestVals{wa,wj}; [~,rep] = min(abs(v-median(v)));
+    e.choice = [wa,wj,rep]; e.scores = zeros(3,3,ns,4);
+    % One test prediction vector per fitted checkpoint; reuse it for every diagnostic.
+    for a = 1:3
+        net = network(d.dim,a);
+        for j = 1:3
+            e.pred{a,j} = zeros(numel(d.te),ns);
+            for r = 1:ns
+                p = predict(blocks{a}.theta{j,r},net,d.Xte)'*d.sy+d.my;
+                e.pred{a,j}(:,r) = p;
+                e.scores(a,j,r,:) = metrics(d.ytest,p);
+            end
+        end
+    end
+    if strcmp(d.name,'Concrete')
+        e.refNames = {'OLS_raw_age','OLS_log_age'};
+        e.refPred = [linear_fit(d.cleaned(:,1:8),d),linear_fit(d.x,d)];
+    else
+        e.refNames = {'Persistence','AR_lags','AR_lags_calendar'};
+        e.refPred = [d.x(d.te,1),linear_fit(d.x(:,1:d.p),d),linear_fit(d.x,d)];
+    end
+    for j = 1:numel(e.refNames)
+        e.refScores(j,:) = metrics(d.ytest,e.refPred(:,j));
+    end
+end
+
+function p = linear_fit(x,d)
+    design = [ones(size(x,1),1),x];
+    coef = design(d.tr,:) \ d.y(d.tr);
+    p = design(d.te,:)*coef;
+end
